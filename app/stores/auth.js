@@ -1,71 +1,127 @@
+// app/stores/auth.js
 import { defineStore } from "pinia";
+import { useApi, useAuthToken } from "~/composables/useApi";
+import { useSavedProfiles } from "~/composables/useSavedProfiles";
 
 export const useAuthStore = defineStore("auth", {
-  state: () => ({ user: null, loading: false, error: null }),
+  state: () => ({
+    token: useAuthToken().value, // lu une seule fois au démarrage
+    user: null,
+    loading: false,
+    error: null,
+  }),
+
+  getters: {
+    isLoggedIn: (s) => !!s.token,
+  },
 
   actions: {
-    async login({ identifier, password }) {
-      this.loading = true;
+    // internes
+    _setToken(jwt) {
+      const cookie = useAuthToken();
+      cookie.value = jwt || null;
+      this.token = jwt || null;
+    },
+    _clear() {
+      this._setToken(null);
+      this.user = null;
       this.error = null;
-      try {
-        const {
-          public: { apiUrl },
-        } = useRuntimeConfig();
-        const res = await $fetch("/auth/local", {
-          baseURL: apiUrl,
-          method: "POST",
-          body: { identifier, password },
-        });
-        const token = useAuthToken();
-        token.value = res.jwt;
-        this.user = res.user;
-        return res.user;
-      } catch (e) {
-        this.error = e?.data?.error?.message || e.message;
-        throw e;
-      } finally {
-        this.loading = false;
-      }
     },
 
+    // Restaure l'utilisateur depuis le backend (utilisé au rafraîchissement)
+    async fetchMe() {
+      if (!this.token || this.user) return;
+      const { api } = useApi();
+      // on force le bearer par sécurité (au cas où)
+      const me = await api("/users/me", {
+        headers: { Authorization: `Bearer ${this.token}` },
+      });
+      this.user = me;
+    },
+
+    // --- Auth de base (SIMPLE) ---
+
+    // Strapi renvoie déjà { jwt, user } → pas besoin d'appeler /users/me ici.
     async register({ username, email, password }) {
       this.loading = true;
       this.error = null;
       try {
-        const {
-          public: { apiUrl },
-        } = useRuntimeConfig();
-        const res = await $fetch("/auth/local/register", {
-          baseURL: apiUrl,
+        const { api } = useApi();
+        const res = await api("/auth/local/register", {
           method: "POST",
           body: { username, email, password },
         });
-        const token = useAuthToken();
-        token.value = res.jwt;
+        this._setToken(res.jwt);
         this.user = res.user;
-        return res.user;
+
+        // Sauvegarde "profil récent" pour l'écran de login
+        if (import.meta.client) {
+          useSavedProfiles().upsert({
+            id: res.user.id,
+            username: res.user.username,
+            email: res.user.email,
+            token: res.jwt,
+          });
+        }
+
+        navigateTo("/home");
       } catch (e) {
-        this.error = e?.data?.error?.message || e.message;
+        this.error = e?.data?.error?.message || "Inscription impossible.";
         throw e;
       } finally {
         this.loading = false;
       }
     },
 
-    async me() {
+    async login({ identifier, password }) {
+      this.loading = true;
+      this.error = null;
       try {
         const { api } = useApi();
-        this.user = await api("/users/me");
-        return this.user;
-      } catch {
-        this.user = null;
+        const res = await api("/auth/local", {
+          method: "POST",
+          body: { identifier, password },
+        });
+        this._setToken(res.jwt);
+        this.user = res.user;
+
+        if (import.meta.client) {
+          useSavedProfiles().upsert({
+            id: res.user.id,
+            username: res.user.username,
+            email: res.user.email,
+            token: res.jwt,
+          });
+        }
+
+        navigateTo("/home");
+      } catch (e) {
+        const code = e?.data?.error?.status;
+        if (code === 403)
+          this.error = "Connexion refusée (compte bloqué ou login désactivé).";
+        else if (code === 400) this.error = "Identifiants invalides.";
+        else
+          this.error = e?.data?.error?.message || "Impossible de se connecter.";
+        throw e;
+      } finally {
+        this.loading = false;
       }
     },
 
+    // Connexion 1-clic depuis "profils récents"
+    quickLogin(profile) {
+      // On place le token + un user minimal ; le middleware validera via /users/me
+      this._setToken(profile.token || null);
+      this.user = profile.token
+        ? { id: profile.id, username: profile.username, email: profile.email }
+        : null;
+
+      navigateTo("/home");
+    },
+
     logout() {
-      const token = useAuthToken();
-      token.value = null;
-      this.user = null;
+      this._clear();
+      navigateTo("/login");
     },
   },
 });

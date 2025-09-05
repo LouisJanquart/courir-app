@@ -1,44 +1,46 @@
-<script setup>
-import { usePlanStore } from '~/stores/plan'
-
-function formatMinSec(total) {
-  const m = Math.floor(total / 60)
-  const s = total % 60
-  return `${m} min ${String(s).padStart(2, '0')} s`
-}
-
-const plan = usePlanStore()
-
-// charge une seule fois (même si on revient sur la page)
-await plan.load()
-</script>
-
+<!-- app/pages/plan.vue -->
 <template>
-  <section>
+  <section v-if="ready">
     <h1>Plan</h1>
-    <p v-if="plan.pending">Chargement…</p>
-    <p v-else-if="plan.error">Erreur : {{ plan.error }}</p>
-
-    <div v-else>
-      <div v-for="season in plan.seasons" :key="season.id" class="season">
-        <h2>{{ season.title }}</h2>
-
-        <div v-for="week in season.weeks" :key="week.id" class="week">
-          <h3>Semaine {{ week.number }}</h3>
-          <ul>
-            <li v-for="session in week.sessions" :key="session.id">
-              Séance {{ session.number }}
-              — {{ formatMinSec(plan.sessionTotal(session)) }}
-              ({{ session.steps?.length ?? 0 }} étapes)
-            </li>
-          </ul>
-        </div>
+    <div v-for="(sess,i) in sessions" :key="i" class="row" :class="{ done: i < doneIndex }">
+      <div class="left">Séance {{sess.number}}</div>
+      <div class="right">
+        <button v-if="i === doneIndex" @click="goPlay">Démarrer</button>
       </div>
     </div>
   </section>
+  <p v-else>Chargement…</p>
 </template>
 
+<script setup>
+import { usePlanStore } from '~/stores/plan'
+import { useProgressStore } from '~/stores/progress'
+const plan = usePlanStore()
+const progress = useProgressStore()
+const router = useRouter()
+
+const ready = ref(false)
+const sessions = ref([])
+const doneIndex = ref(0)
+
+onMounted(async () => {
+  await plan.load()
+  await progress.ensureProfile()
+
+  const p = progress.profile
+  const season = plan.seasons.find(s => s.order === p.seasonOrder)
+  const week = season?.weeks?.find(w => w.number === p.weekNumber)
+  sessions.value = week?.sessions || []
+
+  // index de la séance courante (0-based)
+  doneIndex.value = Math.max(0, (p.sessionNumber || 1) - 1)
+  ready.value = true
+})
+
+function goPlay() { router.push('/session') }
+</script>
+
 <style scoped>
-.season { margin-bottom: 1rem; }
-.week { margin: .5rem 0 1rem; }
+.row { display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid #eee; }
+.done { opacity: .4; }
 </style>

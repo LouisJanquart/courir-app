@@ -1,5 +1,8 @@
 <script setup>
 import { useAuthStore } from '~/stores/auth'
+
+definePageMeta({ public: true })
+
 const auth = useAuthStore()
 const form = reactive({ username: '', email: '', password: '' })
 const msg = ref('')
