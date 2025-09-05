@@ -20,12 +20,16 @@ export default defineNuxtConfig({
     manifest: {
       name: 'Courir – Pour ma forme',
       short_name: 'Courir',
-      start_url: '/',
+      start_url: '/home',
       display: 'standalone',
       background_color: '#ffffff',
       theme_color: '#111111',
-      icons: []
-    }
+      icons: [
+        { src: '/logo-48-48.png', sizes: '48x48', type: 'image/png' },
+        { src: '/logo-96-96.png', sizes: '96x96', type: 'image/png' },
+        { src: '/logo-192-192.png', sizes: '192x192', type: 'image/png' },
+      ]
+    },
   },
   runtimeConfig: {
     public: {
