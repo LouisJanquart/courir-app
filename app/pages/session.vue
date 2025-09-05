@@ -9,18 +9,7 @@
       </p>
     </header>
 
-    <!-- 1) Pré-permission GPS -->
-    <div v-if="geoStatus !== 'granted'" class="panel warn">
-      <p>
-        L’app a besoin de votre position pour la séance (distance & allure).
-      </p>
-      <button class="btn" @click="askGeo">Activer la localisation</button>
-      <p v-if="geoStatus === 'denied'" class="err">
-        Accès refusé. Autorisez la localisation pour ce site dans les réglages du navigateur.
-      </p>
-    </div>
-
-    <!-- 2) Minuteurs + stats live -->
+    <!-- Minuteurs + stats live -->
     <div class="timers panel">
       <div class="big">{{ fmt(workout.elapsedS) }}</div>
 
@@ -58,24 +47,11 @@
       </div>
     </div>
 
-    <!-- 3) Actions -->
+    <!-- Actions -->
     <div class="actions">
-      <button
-        v-if="!workout.isActive"
-        class="btn primary"
-        :disabled="geoStatus !== 'granted'"
-        @click="start"
-      >
-        Démarrer
-      </button>
-
-      <button v-else-if="workout.isPaused" class="btn" @click="resume">
-        Reprendre
-      </button>
-
-      <button v-else class="btn" @click="pause">
-        Pause
-      </button>
+      <button v-if="!workout.isActive" class="btn primary" @click="start">Démarrer</button>
+      <button v-else-if="workout.isPaused" class="btn" @click="resume">Reprendre</button>
+      <button v-else class="btn" @click="pause">Pause</button>
 
       <button
         v-if="workout.isActive || workout.elapsedS>0"
@@ -105,12 +81,11 @@ const auth = useAuthStore()
 const router = useRouter()
 const { public: { apiUrl } } = useRuntimeConfig()
 
-const { geoStatus, ensureGeoReady } = useGeoReady()
+const { ensureGeoReady } = useGeoReady()
 
-// Profil coureur courant
 const profile = computed(() => progress.profile)
 
-// === Récupère les steps de la séance courante (simple & robuste) ===
+// === Steps de la séance courante ===
 const steps = ref([]) // [{ kind, label, seconds }, ...]
 const totalPlannedS = computed(() => steps.value.reduce((s, st) => s + (st.seconds || 0), 0))
 
@@ -131,7 +106,7 @@ async function loadCurrentSessionSteps() {
   steps.value = Array.isArray(sess?.steps) ? sess.steps : []
 }
 
-// === Minuteur d’étape calculé côté page (à partir de elapsedS) ===
+// === Minuteur d’étape ===
 const currentStepIndex = computed(() => {
   let t = workout.elapsedS
   for (let i = 0; i < steps.value.length; i++) {
@@ -213,9 +188,7 @@ onMounted(async () => {
   await loadCurrentSessionSteps()
 })
 
-// UI helpers
-async function askGeo() { await ensureGeoReady() }
-
+// Helpers
 function fmt (s = 0) {
   const m = String(Math.floor(s / 60)).padStart(2, '0')
   const ss = String(s % 60).padStart(2, '0')
@@ -231,9 +204,11 @@ function pace (p) {
 // Actions séance
 async function start () {
   try {
-    if (geoStatus.value !== 'granted') {
-      const ok = await ensureGeoReady()
-      if (!ok) return
+    // On tente quand même ici (si l’utilisateur a refusé au boot)
+    const ok = await ensureGeoReady()
+    if (!ok) {
+      alert('Autorise la localisation pour démarrer la séance.')
+      return
     }
     await workout.start()
   } catch (e) {
@@ -261,10 +236,7 @@ async function stop () {
     const saved = await workout.stopAndSave(meta)
     workout.reset()
 
-    // ➜ Avancer la prochaine séance dans RunnerProfile
     await advanceToNextSession(jwt)
-
-    // Recharger profil (pour que Home + Liste reflètent le nouveau "à faire")
     await progress.ensureProfile()
 
     const runId = saved?.documentId || saved?.id
@@ -276,12 +248,11 @@ async function stop () {
   }
 }
 
-// ➜ Avance à la prochaine séance (sans populate profond)
+// ➜ Avance à la prochaine séance (compte combien de sessions existent dans la semaine)
 async function advanceToNextSession(jwt) {
   if (!profile.value) return
   const { seasonOrder, weekNumber, sessionNumber } = profile.value
 
-  // 1) Combien de sessions dans cette semaine ?
   const list = await $fetch(`${apiUrl}/sessions`, {
     query: {
       'filters[week][number][$eq]': String(weekNumber),
@@ -291,7 +262,6 @@ async function advanceToNextSession(jwt) {
   })
   const totalInWeek = list?.meta?.pagination?.total || 1
 
-  // 2) Calcul next
   let nextWeek = weekNumber
   let nextSession = sessionNumber + 1
   if (nextSession > totalInWeek) {
@@ -299,7 +269,6 @@ async function advanceToNextSession(jwt) {
     nextWeek = weekNumber + 1
   }
 
-  // 3) Update RunnerProfile (avec Authorization)
   const docId = profile.value.documentId
   if (!docId) return
   await $fetch(`${apiUrl}/runner-profiles/${encodeURIComponent(docId)}`, {
@@ -318,8 +287,6 @@ async function advanceToNextSession(jwt) {
 .panel {
   background:#fff; border:1px solid #eee; border-radius:12px; padding:12px; margin:12px 0;
 }
-.warn { background:#fff7e6; border-color:#ffe0b2; }
-.err { color:#b00020; margin-top: 6px; }
 
 .timers .big { font-size: 56px; font-weight: 900; line-height: 1; margin-bottom: 8px; text-align:center; }
 .rows { display:grid; gap:8px; }
