@@ -1,13 +1,53 @@
-<!-- app/pages/profile.vue -->
+<script setup>
+// Page Profil
+// - Affiche les infos de l'utilisateur connecté
+// - Montre la position courante dans le plan (saison/semaine/séance)
+// - Bouton "Se déconnecter"
+// - Au refresh, si token présent mais user manquant → fetchMe() puis ensureProfile()
+
+import { computed, onMounted } from 'vue'
+import { useAuthStore } from '~/stores/auth'
+import { useProgressStore } from '~/stores/progress'
+
+definePageMeta({ middleware: 'secure' })
+
+useHead({ title: 'Mon profil • Courir' })
+
+const auth = useAuthStore()
+const progress = useProgressStore()
+
+// RunnerProfile courant (peut être null le temps du chargement)
+const profile = computed(() => progress.profile)
+
+// Au montage : restaure l'utilisateur + le profil si besoin
+onMounted(async () => {
+  try {
+    if (auth.token && !auth.user) {
+      await auth.fetchMe() // récupère /users/me côté Strapi
+    }
+  } catch {
+    // Silencieux : si le token est invalide, le middleware global te renverra vers /login
+  }
+  await progress.ensureProfile()
+})
+
+// Actions
+function onLogout () {
+  if (confirm('Se déconnecter ?')) auth.logout()
+}
+</script>
+
 <template>
   <section class="wrap">
     <h1>Mon profil</h1>
 
+    <!-- État non connecté -->
     <div v-if="!auth.user" class="card">
       <p>Vous n’êtes pas connecté(e).</p>
       <NuxtLink to="/login" class="btn">Se connecter</NuxtLink>
     </div>
 
+    <!-- Profil -->
     <div v-else class="card">
       <div class="head">
         <span class="material-symbols-outlined avatar">person</span>
@@ -39,32 +79,6 @@
     </div>
   </section>
 </template>
-
-<script setup>
-import { useAuthStore } from '~/stores/auth'
-import { useProgressStore } from '~/stores/progress'
-
-const auth = useAuthStore()
-const progress = useProgressStore()
-
-const profile = computed(() => progress.profile)
-
-onMounted(async () => {
-  const token = useAuthToken().value
-  if (token && !auth.user) {
-    auth._setToken(token)
-    try { await auth.fetchMe?.() } catch {}
-  }
-  await progress.ensureProfile()
-})
-
-
-function onLogout () {
-  if (confirm('Se déconnecter ?')) {
-    auth.logout() // nettoie le cookie auth_token + navigateTo('/login')
-  }
-}
-</script>
 
 <style scoped lang="scss">
 .wrap { padding: 12px; }
